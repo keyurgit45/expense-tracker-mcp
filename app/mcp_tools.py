@@ -30,7 +30,6 @@ class SpendingSummary(BaseModel):
     total_amount: float
     transaction_count: int
     top_categories: List[dict]
-    date_range: str
 
 
 @mcp_router.post("/create-expense")
@@ -115,8 +114,7 @@ async def get_spending_summary(days: int = 30) -> SpendingSummary:
             return SpendingSummary(
                 total_amount=0.0,
                 transaction_count=0,
-                top_categories=[],
-                date_range=f"Last {days} days"
+                top_categories=[]
             )
         
         # Calculate totals
@@ -141,8 +139,7 @@ async def get_spending_summary(days: int = 30) -> SpendingSummary:
         return SpendingSummary(
             total_amount=total_amount,
             transaction_count=transaction_count,
-            top_categories=top_categories,
-            date_range=f"Last {days} days"
+            top_categories=top_categories
         )
         
     except Exception as e:

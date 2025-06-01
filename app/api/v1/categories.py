@@ -48,37 +48,3 @@ async def delete_category(category_id: str):
     return {"message": "Category deleted successfully"}
 
 
-@router.get("/tree")
-async def get_categories_tree(active_only: bool = Query(True)):
-    """Get categories in a hierarchical tree structure"""
-    # Get all categories
-    all_categories = await categories.get_categories(supabase, 0, 1000, active_only)
-    
-    # Build tree manually
-    tree = []
-    
-    for cat in all_categories:
-        if not cat.parent_category_id:  # This is a parent category
-            parent_dict = {
-                "category_id": str(cat.category_id),
-                "name": cat.name,
-                "is_active": cat.is_active,
-                "parent_category_id": None,
-                "children": []
-            }
-            
-            # Find children
-            for child_cat in all_categories:
-                if str(child_cat.parent_category_id) == str(cat.category_id):
-                    child_dict = {
-                        "category_id": str(child_cat.category_id),
-                        "name": child_cat.name,
-                        "is_active": child_cat.is_active,
-                        "parent_category_id": str(child_cat.parent_category_id),
-                        "children": []
-                    }
-                    parent_dict["children"].append(child_dict)
-            
-            tree.append(parent_dict)
-    
-    return tree

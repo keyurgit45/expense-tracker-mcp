@@ -129,7 +129,6 @@ python scripts/mcp_demo.py
 - `POST /api/v1/categories/` - Create category
 - `GET /api/v1/categories/` - List categories
 - `GET /api/v1/categories/{id}` - Get category
-- `GET /api/v1/categories/tree` - Get hierarchical category tree
 - `PUT /api/v1/categories/{id}` - Update category
 - `DELETE /api/v1/categories/{id}` - Soft delete category
 
