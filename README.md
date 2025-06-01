@@ -171,6 +171,25 @@ ENVIRONMENT=test pytest tests/test_mcp_tools.py -v
 - Scripts include environment safety checks
 - Production database protection enabled
 
+## 🚀 Continuous Integration
+
+This project uses GitHub Actions for automated testing and quality assurance:
+
+### Workflows
+- **Tests**: Run on Python 3.10, 3.11, 3.12 with mocked database
+- **Lint**: Code formatting (black), import sorting (isort), linting (flake8)
+- **Security**: Dependency scanning (safety), security linting (bandit), secret detection
+- **Coverage**: Test coverage reporting with Codecov integration
+
+### Status Badges
+Add these to your GitHub repo for status visibility:
+```markdown
+![Tests](https://github.com/YOUR_USERNAME/expense-tracker-mcp-server/workflows/Tests/badge.svg)
+![Lint](https://github.com/YOUR_USERNAME/expense-tracker-mcp-server/workflows/Lint/badge.svg)
+![Security](https://github.com/YOUR_USERNAME/expense-tracker-mcp-server/workflows/Security/badge.svg)
+![Coverage](https://github.com/YOUR_USERNAME/expense-tracker-mcp-server/workflows/Coverage/badge.svg)
+```
+
 ## 🌍 Environment Variables
 
 ```bash

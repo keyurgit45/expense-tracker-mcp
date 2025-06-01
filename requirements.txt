@@ -8,4 +8,5 @@ python-multipart
 fastapi-mcp
 pytest
 pytest-asyncio
+pytest-cov
 httpx
