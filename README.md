@@ -118,6 +118,11 @@ python scripts/populate_hierarchical_categories.py
 python scripts/show_categories.py
 ```
 
+### 7. Test MCP Integration
+```bash
+python scripts/mcp_demo.py
+```
+
 ## 📡 API Endpoints
 
 ### Categories
@@ -156,6 +161,9 @@ ENVIRONMENT=test pytest tests/ -v
 
 # Run specific test file
 ENVIRONMENT=test pytest tests/test_categories.py -v
+
+# Test MCP tools specifically
+ENVIRONMENT=test pytest tests/test_mcp_tools.py -v
 ```
 
 **🛡️ Database Safety**
@@ -197,7 +205,70 @@ ExpenseTracker/
 
 ## 🤖 MCP Integration
 
-This server implements the Model Context Protocol (MCP) for seamless integration with LLM-powered expense management systems. Upload bank statement PDFs to an LLM, which parses transactions and sends them to this server for storage and categorization.
+This server implements the **Model Context Protocol (MCP)** using `fastapi-mcp` for seamless LLM integration. It provides both REST API endpoints and MCP tools for AI agents.
+
+### MCP Tools Available
+
+#### 🔧 **create-expense**
+Create expenses from LLM-parsed bank statements:
+```bash
+curl -X POST "http://localhost:8000/mcp-tools/create-expense" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2024-01-30",
+    "amount": 25.50,
+    "merchant": "Starbucks Coffee",
+    "category": "Coffee & Beverages",
+    "notes": "Morning coffee",
+    "tags": ["business", "coffee"]
+  }'
+```
+
+#### 📊 **spending-summary**
+Get spending analytics for LLM insights:
+```bash
+curl "http://localhost:8000/mcp-tools/spending-summary?days=30"
+```
+
+#### 📁 **categories**
+Get all categories for LLM categorization:
+```bash
+curl "http://localhost:8000/mcp-tools/categories"
+```
+
+#### 🤖 **auto-categorize**
+Auto-suggest categories based on merchant:
+```bash
+curl -X POST "http://localhost:8000/mcp-tools/auto-categorize" \
+  -H "Content-Type: application/json" \
+  -d '{"merchant": "Shell Gas Station", "amount": 45.00}'
+```
+
+#### 📝 **recent-transactions**
+Get recent transactions for context:
+```bash
+curl "http://localhost:8000/mcp-tools/recent-transactions?limit=10"
+```
+
+### Using with LLM Agents
+
+The FastAPI-MCP integration automatically exposes these tools via the MCP protocol at `/mcp`. LLM agents can:
+
+1. **Parse PDF bank statements** and call `create-expense` for each transaction
+2. **Auto-categorize** expenses using `auto-categorize` 
+3. **Provide insights** using `spending-summary` and `recent-transactions`
+4. **Smart categorization** by understanding the category hierarchy
+
+### Example LLM Workflow
+
+```
+1. User uploads bank statement PDF
+2. LLM parses transactions from PDF
+3. For each transaction:
+   - LLM calls auto-categorize to suggest category
+   - LLM calls create-expense to store transaction
+4. LLM calls spending-summary to provide insights
+```
 
 ## 📄 License
 

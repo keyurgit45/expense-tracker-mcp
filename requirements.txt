@@ -5,7 +5,7 @@ pydantic-settings
 supabase
 python-dotenv
 python-multipart
-mcp
+fastapi-mcp
 pytest
 pytest-asyncio
 httpx
