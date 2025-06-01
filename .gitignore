@@ -37,3 +37,11 @@ htmlcov/
 .DS_Store
 .vscode/
 .idea/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Pytest
+.pytest_cache/
