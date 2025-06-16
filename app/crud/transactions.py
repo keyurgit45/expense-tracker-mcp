@@ -1,17 +1,22 @@
 import uuid
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from supabase import Client
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse, TransactionWithTags, TagResponse
 
 
 async def create_transaction(db: Client, transaction: TransactionCreate) -> TransactionResponse:
     transaction_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Ensure transaction date has timezone info
+    transaction_date = transaction.date
+    if transaction_date.tzinfo is None:
+        transaction_date = transaction_date.replace(tzinfo=timezone.utc)
     
     data = {
         "transaction_id": transaction_id,
-        "date": transaction.date.isoformat(),
+        "date": transaction_date.isoformat(),
         "amount": float(transaction.amount),
         "merchant": transaction.merchant,
         "category_id": str(transaction.category_id) if transaction.category_id else None,
@@ -59,10 +64,13 @@ async def get_transaction_with_tags(db: Client, transaction_id: str) -> Optional
 
 
 async def update_transaction(db: Client, transaction_id: str, transaction_update: TransactionUpdate) -> Optional[TransactionResponse]:
-    update_data = {"updated_at": datetime.utcnow().isoformat()}
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
     
     if transaction_update.date is not None:
-        update_data["date"] = transaction_update.date.isoformat()
+        transaction_date = transaction_update.date
+        if transaction_date.tzinfo is None:
+            transaction_date = transaction_date.replace(tzinfo=timezone.utc)
+        update_data["date"] = transaction_date.isoformat()
     if transaction_update.amount is not None:
         update_data["amount"] = float(transaction_update.amount)
     if transaction_update.merchant is not None:

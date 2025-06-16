@@ -7,10 +7,8 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_create_tag(mock_supabase_client, sample_tag, mock_supabase_response):
     """Test tag creation with mocked database"""
-    # Mock check for existing tag (should return empty)
-    mock_supabase_client.table().select().eq().execute.return_value = mock_supabase_response([])
-    # Mock successful creation
-    mock_supabase_client.table().insert().execute.return_value = mock_supabase_response([sample_tag])
+    # Mock check for existing tag (should return empty) then successful creation
+    mock_supabase_client.table().execute.side_effect = [mock_supabase_response([]), mock_supabase_response([sample_tag])]
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -26,7 +24,8 @@ async def test_create_tag(mock_supabase_client, sample_tag, mock_supabase_respon
 @pytest.mark.asyncio
 async def test_get_tags(mock_supabase_client, sample_tag, mock_supabase_response):
     """Test getting tags with mocked database"""
-    mock_supabase_client.table().select().range().execute.return_value = mock_supabase_response([sample_tag])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_tag])
+    
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -39,7 +38,8 @@ async def test_get_tags(mock_supabase_client, sample_tag, mock_supabase_response
 @pytest.mark.asyncio
 async def test_get_tag_by_id(mock_supabase_client, sample_tag, mock_supabase_response):
     """Test getting single tag by ID"""
-    mock_supabase_client.table().select().eq().execute.return_value = mock_supabase_response([sample_tag])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_tag])
+    
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -56,7 +56,8 @@ async def test_delete_tag(mock_supabase_client, sample_tag, mock_supabase_respon
     # Mock deleting transaction_tags relationships first
     mock_supabase_client.table().delete().eq().execute.return_value = mock_supabase_response([])
     # Mock deleting the tag itself
-    mock_supabase_client.table().delete().eq().execute.return_value = mock_supabase_response([sample_tag])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_tag])
+    
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -74,7 +75,7 @@ async def test_add_tag_to_transaction(mock_supabase_client, sample_tag, sample_t
         "tag_id": sample_tag["tag_id"]
     }
     
-    mock_supabase_client.table().insert().execute.return_value = mock_supabase_response([transaction_tag])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([transaction_tag])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

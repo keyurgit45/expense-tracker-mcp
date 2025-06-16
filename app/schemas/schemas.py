@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 from uuid import UUID
@@ -27,7 +27,7 @@ class CategoryResponse(BaseModel):
 
 
 class TransactionCreate(BaseModel):
-    date: date
+    date: datetime
     amount: Decimal = Field(..., gt=0, decimal_places=2)
     merchant: Optional[str] = Field(None, max_length=255)
     category_id: Optional[UUID] = None
@@ -36,7 +36,7 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[datetime] = None
     amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
     merchant: Optional[str] = Field(None, max_length=255)
     category_id: Optional[UUID] = None
@@ -46,7 +46,7 @@ class TransactionUpdate(BaseModel):
 
 class TransactionResponse(BaseModel):
     transaction_id: UUID
-    date: date
+    date: datetime
     amount: Decimal
     merchant: Optional[str]
     category_id: Optional[UUID]

@@ -287,11 +287,23 @@ The FastAPI-MCP integration automatically exposes these tools via the MCP protoc
    - LLM calls create-expense to store transaction
 4. LLM calls spending-summary to provide insights
 ```
-
-## 📄 License
-
-MIT License - feel free to use this for your expense tracking needs!
-
----
-
-**Generated with ❤️ for automated expense management**
+{
+    "mcpServers": {
+      "expense-tracker": {
+         "command": "/opt/homebrew/bin/uv",
+       "args": [
+          "run",
+          "--directory",
+          "/Users/keyur/Code/Projects/ExpenseTracker",
+          "python",
+          "run_mcp.py"
+        ],
+        "cwd": "/Users/keyur/Code/Projects/ExpenseTracker",
+        "env": {
+          "SUPABASE_URL": "",
+          "SUPABASE_KEY": "",
+          "ENVIRONMENT": "development"
+        }
+      }
+    }
+}

@@ -43,7 +43,8 @@ async def test_get_categories(mock_supabase_client, sample_category, mock_supaba
 @pytest.mark.asyncio
 async def test_get_category_by_id(mock_supabase_client, sample_category, mock_supabase_response):
     """Test getting single category by ID"""
-    mock_supabase_client.table().select().eq().execute.return_value = mock_supabase_response([sample_category])
+    # Setup the mock response for this specific test
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_category])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -60,7 +61,7 @@ async def test_update_category(mock_supabase_client, sample_category, mock_supab
     updated_category = sample_category.copy()
     updated_category["name"] = "Updated Category"
     
-    mock_supabase_client.table().update().eq().execute.return_value = mock_supabase_response([updated_category])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([updated_category])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -79,7 +80,7 @@ async def test_delete_category(mock_supabase_client, sample_category, mock_supab
     deleted_category = sample_category.copy()
     deleted_category["is_active"] = False
     
-    mock_supabase_client.table().update().eq().execute.return_value = mock_supabase_response([deleted_category])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([deleted_category])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

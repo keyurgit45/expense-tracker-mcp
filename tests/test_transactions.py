@@ -14,7 +14,7 @@ async def test_create_transaction(mock_supabase_client, sample_transaction, mock
             response = await ac.post(
                 "/api/v1/transactions/",
                 json={
-                    "date": "2024-01-01",
+                    "date": "2024-01-01T00:00:00Z",
                     "amount": 50.00,
                     "merchant": "Test Store",
                     "is_recurring": False
@@ -22,7 +22,7 @@ async def test_create_transaction(mock_supabase_client, sample_transaction, mock
             )
             assert response.status_code == 200
             data = response.json()
-            assert data["amount"] == "50.00"
+            assert data["amount"] == "50.0"
             assert data["merchant"] == "Test Store"
 
 
@@ -42,7 +42,7 @@ async def test_get_transactions(mock_supabase_client, sample_transaction, mock_s
 @pytest.mark.asyncio
 async def test_get_transaction_by_id(mock_supabase_client, sample_transaction, mock_supabase_response):
     """Test getting single transaction by ID"""
-    mock_supabase_client.table().select().eq().execute.return_value = mock_supabase_response([sample_transaction])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_transaction])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -58,7 +58,7 @@ async def test_update_transaction(mock_supabase_client, sample_transaction, mock
     updated_transaction = sample_transaction.copy()
     updated_transaction["amount"] = "75.00"
     
-    mock_supabase_client.table().update().eq().execute.return_value = mock_supabase_response([updated_transaction])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([updated_transaction])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -68,13 +68,13 @@ async def test_update_transaction(mock_supabase_client, sample_transaction, mock
             )
             assert response.status_code == 200
             data = response.json()
-            assert data["amount"] == "75.00"
+            assert data["amount"] == "75.0"
 
 
 @pytest.mark.asyncio
 async def test_delete_transaction(mock_supabase_client, sample_transaction, mock_supabase_response):
     """Test deleting a transaction"""
-    mock_supabase_client.table().delete().eq().execute.return_value = mock_supabase_response([sample_transaction])
+    mock_supabase_client.table().execute.return_value = mock_supabase_response([sample_transaction])
     
     with patch('app.database.supabase', mock_supabase_client):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 from uuid import uuid4
-from datetime import datetime, date
+from datetime import datetime, timezone
 import os
 
 # Set test environment
@@ -24,11 +24,10 @@ def mock_supabase_client(mock_supabase_response):
     """Mock Supabase client for testing"""
     client = Mock()
     
-    # Mock table operations
+    # Create a shared table mock that can be configured per test
     table_mock = Mock()
-    client.table.return_value = table_mock
     
-    # Chain methods for common operations
+    # All methods return the same mock to allow chaining
     table_mock.insert.return_value = table_mock
     table_mock.select.return_value = table_mock
     table_mock.update.return_value = table_mock
@@ -39,6 +38,9 @@ def mock_supabase_client(mock_supabase_response):
     
     # Default execute response
     table_mock.execute.return_value = mock_supabase_response([])
+    
+    # Return the same mock for all table() calls
+    client.table.return_value = table_mock
     
     return client
 
@@ -59,14 +61,14 @@ def sample_transaction():
     """Sample transaction data for testing"""
     return {
         "transaction_id": str(uuid4()),
-        "date": "2024-01-01",
+        "date": datetime.now(timezone.utc).isoformat(),
         "amount": "50.00",
         "merchant": "Test Store",
         "category_id": str(uuid4()),
         "is_recurring": False,
         "notes": "Test transaction",
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
 
 
