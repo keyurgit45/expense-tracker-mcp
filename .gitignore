@@ -45,3 +45,13 @@ htmlcov/
 
 # Pytest
 .pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# Temporary test files
+test_*.py
+*_test.py
+claude_desktop_config.json
+CLAUDE_SETUP.md

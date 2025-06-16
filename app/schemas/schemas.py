@@ -28,7 +28,7 @@ class CategoryResponse(BaseModel):
 
 class TransactionCreate(BaseModel):
     date: datetime
-    amount: Decimal = Field(..., gt=0, decimal_places=2)
+    amount: Decimal = Field(..., decimal_places=2)
     merchant: Optional[str] = Field(None, max_length=255)
     category_id: Optional[UUID] = None
     is_recurring: bool = False
@@ -37,7 +37,7 @@ class TransactionCreate(BaseModel):
 
 class TransactionUpdate(BaseModel):
     date: Optional[datetime] = None
-    amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    amount: Optional[Decimal] = Field(None, decimal_places=2)
     merchant: Optional[str] = Field(None, max_length=255)
     category_id: Optional[UUID] = None
     is_recurring: Optional[bool] = None

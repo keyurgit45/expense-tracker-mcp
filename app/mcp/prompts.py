@@ -7,68 +7,68 @@ from mcp.server.fastmcp import FastMCP
 def register_prompts(mcp: FastMCP):
     """Register all MCP prompts with the server"""
     
-    @mcp.prompt(name="receipt_parser")
-    def receipt_parser_prompt() -> str:
-        """Instructions for parsing receipts and bank statements"""
-        return """Receipt and Bank Statement Parsing Instructions:
+    @mcp.prompt(name="add_transaction", description="Instructions for parsing natural language transaction descriptions")
+    def add_transaction_prompt() -> str:
+        """Instructions for adding a new transaction"""
+        return """Transaction Entry Instructions:
 
-When parsing financial documents:
+Parse natural language transaction descriptions and extract:
 
-1. Extract Key Information:
-   - Transaction date (use exact date from document)
-   - Amount (include decimals, convert to positive number)
-   - Merchant name (use full business name)
-   - Payment method (if available)
+1. Required Information:
+   - Amount: The transaction amount in rupees
+     * User provides amount as spent (e.g., "12" means spent ₹12)
+     * Convert to negative for expenses/debits (money spent)
+     * Keep positive for income/credits (money received)
+   - Date: When the transaction occurred
+     * Parse dates like "12 june", "yesterday", "today", "last monday"
+     * Include time if provided (e.g., "6pm")
+     * Default to current date if not specified
+   - Merchant: Where the transaction occurred
+     * Extract business/merchant name from description
+   - Category: Use get_categories() to find the appropriate category
+     * Match based on merchant type and transaction context
 
-2. Categorization Rules:
-   - Match merchant names to appropriate categories
-   - Look for keywords in merchant names
-   - Consider transaction amounts for context
-   - Check for recurring patterns
+2. Optional Information:
+   - Tags: Apply relevant tags if mentioned or implied
+     * Use get_available_tags() to see valid tags
+     * Common tags: "cash", "personal", "business", "recurring"
+   - Notes: Any additional context or details
+     * Item details, purpose, or other relevant information
 
-3. Common Merchant Patterns:
-   - "AMZN" or "AMAZON" → Shopping (Online Shopping)
-   - "UBER" or "LYFT" → Transportation (Ride Sharing)
-   - "STARBUCKS" or "COFFEE" → Food & Dining (Coffee & Tea)
-   - "NETFLIX" or "SPOTIFY" → Entertainment (Subscriptions)
-   - Gas station names → Transportation (Fuel)
-   - Restaurant names → Food & Dining (Restaurants)
-
-4. Tags to Apply (use ONLY these predefined tags):
+3. Example Parsing:
+   Input: "i bought maggi on 12 june, 6pm for rs 12"
    
-   Subscription Frequency:
-   - "annual-subscription" for yearly payments
-   - "monthly-subscription" for monthly payments
-   - "quarterly-subscription" for quarterly payments
-   
-   Expense Type:
-   - "subscription" for recurring services
-   - "recurring" for regular expenses
-   - "one-time" for single purchases
-   
-   Category Tags:
-   - "online" for e-commerce
-   - "business" for work-related expenses
-   - "personal" for personal expenses
-   - "travel" for trip-related costs
-   
-   Special Tags:
-   - "tax-deductible" for deductible expenses
-   - "reimbursable" for reimbursable expenses
-   - "shared" for shared expenses
-   
-   Payment Method:
-   - "cash", "credit-card", "debit-card", "bank-transfer"
-   
-   IMPORTANT: Only use tags from the above list. Call get_available_tags() to see all valid tags.
+   Extracted:
+   - Amount: -12 (negative because it's an expense)
+   - Date: June 12, 6:00 PM (current year)
+   - Merchant: Store name (if not specified, use generic like "Grocery Store")
+   - Category: "Food & Dining" or "Groceries"
+   - Tags: ["personal", "cash"] (if payment method implied)
+   - Notes: "Maggi noodles"
 
-5. Notes Guidelines:
-   - Add item details for shopping receipts
-   - Include purpose for business expenses
-   - Note if expense is tax-deductible
-   - Mention if part of a larger purchase
-   - For subscriptions: Include period covered (e.g., "Annual plan: Jan 2024 - Dec 2024")
-   - For annual payments: Calculate monthly equivalent (e.g., "₹100/year = ₹8.33/month")
+4. Category Selection:
+   - First check available categories using get_categories()
+   - Match based on merchant type:
+     * Grocery items → "Groceries" or "Food & Dining"
+     * Restaurant/cafe → "Food & Dining"
+     * Fuel/petrol → "Transportation"
+     * Online shopping → "Shopping"
+   - When uncertain, use the most specific applicable category
 
-Always maintain accuracy and don't make assumptions about missing information.
+5. Amount Handling:
+   - Expenses (money spent): Make negative
+   - Income (money received): Keep positive
+   - The user may provide negative amounts directly (e.g., "-100" means already an expense)
+   - Examples:
+     * "spent 100" → -100
+     * "received 500" → +500
+     * "paid 50" → -50
+     * "earned 1000" → +1000
+     * "bought for -180" → -180 (already negative, keep as is)
+   
+CRITICAL: When using the create_expense tool, always pass:
+- NEGATIVE amounts for expenses/debits
+- POSITIVE amounts for income/credits
+
+Always extract as much information as possible from the natural language description.
 """

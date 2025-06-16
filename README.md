@@ -8,6 +8,9 @@ A production-ready FastAPI MCP (Model Context Protocol) server for automated exp
 - **Hierarchical Categories**: Parent-child category relationships for better organization
 - **Supabase Integration**: PostgreSQL database with real-time capabilities
 - **Complete CRUD Operations**: Categories, Transactions, Tags with many-to-many relationships
+- **AI-Powered Categorization**: Automatic transaction categorization using embeddings and similarity search
+- **Learning System**: Improves categorization accuracy over time based on user feedback
+- **Predefined Tags**: Enforced tag system for consistency (subscriptions, payment methods, etc.)
 - **Safe Testing**: Comprehensive mocked tests that don't hit production database
 - **Production Ready**: Error handling, validation, safety checks, and documentation
 
@@ -16,8 +19,9 @@ A production-ready FastAPI MCP (Model Context Protocol) server for automated exp
 ### Tables
 - **Categories**: Expense/income categories with hierarchical support
 - **Transactions**: Individual expense/income records
-- **Tags**: Flexible tagging system
+- **Tags**: Flexible tagging system with predefined values
 - **Transaction_Tags**: Many-to-many junction table
+- **Transaction_Embeddings**: Vector embeddings for AI categorization
 
 ### Hierarchical Categories
 ```
@@ -212,13 +216,21 @@ ExpenseTracker/
 │   ├── crud/             # Database operations
 │   ├── models/           # Pydantic models
 │   ├── schemas/          # Request/response schemas
+│   ├── mcp/             # MCP server components
+│   │   ├── tools.py     # MCP tool implementations
+│   │   ├── resources.py # MCP resources
+│   │   ├── prompts.py   # System prompts
+│   │   └── tags_config.py # Predefined tags
+│   ├── services/        # Business logic services
+│   │   ├── embeddings.py # OpenAI embeddings service
+│   │   └── categorization.py # AI categorization logic
 │   ├── config.py         # Settings management
 │   ├── database.py       # Supabase client
 │   └── main.py          # FastAPI app
 ├── tests/               # Pytest test suite with mocks
 ├── scripts/             # Utility scripts
 ├── docs/               # Documentation
-└── requirements.txt    # Dependencies
+└── pyproject.toml      # Project configuration
 ```
 
 ## 🤖 MCP Integration
@@ -307,3 +319,64 @@ The FastAPI-MCP integration automatically exposes these tools via the MCP protoc
       }
     }
 }
+
+## 🧠 AI-Powered Categorization
+
+The expense tracker uses a hybrid approach for intelligent transaction categorization:
+
+### How It Works
+
+1. **Embedding Generation**: Each transaction is converted to text format and embedded using Sentence Transformers (free, local)
+2. **Similarity Search**: Uses pgvector to find similar past transactions
+3. **Smart Voting**: Uses weighted voting from similar transactions to predict category
+4. **Rule-Based Fallback**: Comprehensive rules for common merchant patterns
+5. **Continuous Learning**: User confirmations improve future predictions
+
+### Setup AI Categorization
+
+1. **Enable pgvector** (already done in your Supabase instance)
+
+2. **Create embeddings table**:
+   ```bash
+   # Run the SQL script in Supabase SQL Editor
+   scripts/create_embeddings_schema.sql
+   ```
+
+3. **Populate predefined tags**:
+   ```bash
+   python scripts/populate_predefined_tags.py
+   ```
+
+4. **Install dependencies** - Sentence Transformers will download the model on first use (~90MB)
+
+### MCP Tools for AI Features
+
+- **auto_categorize_transaction**: Automatically categorize uncategorized transactions
+- **confirm_transaction_category**: Confirm/correct categories to improve learning
+- **analyze_subscriptions**: Identify and analyze recurring payments
+
+### Predefined Tags System
+
+The system enforces consistent tagging with 17 predefined tags:
+- **Subscription Types**: annual-subscription, monthly-subscription, quarterly-subscription
+- **Expense Types**: recurring, one-time, subscription
+- **Categories**: business, personal, travel, online
+- **Special**: tax-deductible, reimbursable, shared
+- **Payment Methods**: cash, credit-card, debit-card, bank-transfer
+
+### Example Usage
+
+```python
+# Auto-categorize a transaction
+result = await auto_categorize_transaction(
+    transaction_id="uuid-here",
+    use_embeddings=True
+)
+
+# Confirm category for learning
+await confirm_transaction_category(
+    transaction_id="uuid-here", 
+    category_name="Food & Dining",
+    store_embedding=True
+)
+```

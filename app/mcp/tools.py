@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 import uuid
+import logging
 
 from mcp.server.fastmcp import FastMCP
 
@@ -13,6 +14,10 @@ from app.crud import categories, transactions
 from app.crud import tags as tags_crud
 from app.schemas.schemas import CategoryCreate, TransactionCreate, TransactionUpdate, TagCreate, TransactionTagCreate
 from app.mcp.tags_config import validate_tags, VALID_TAGS, PREDEFINED_TAGS
+
+# Configure logging for MCP
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def register_tools(mcp: FastMCP):
@@ -25,13 +30,30 @@ def register_tools(mcp: FastMCP):
         merchant: str, 
         category: str = None, 
         notes: str = None, 
-        tags: List[str] = None
+        tags: List[str] = None,
+        auto_categorize: bool = True
     ) -> dict:
         """
         Create a new expense transaction from bank statement or receipt data.
         This is the primary tool for adding expenses to the tracking system.
+        
+        IMPORTANT: Amount should be:
+        - NEGATIVE for expenses/debits (money spent)
+        - POSITIVE for income/credits (money received)
+        
+        Examples:
+        - Bought groceries for 100: amount = -100
+        - Received salary 50000: amount = 50000
+        - Paid rent 15000: amount = -15000
+        
+        If auto_categorize is True and no category is provided, will attempt to 
+        automatically categorize the transaction using AI/embeddings.
         """
         try:
+            logger.info(f"Creating expense: date={date}, amount={amount}, merchant={merchant}, category={category}, auto_categorize={auto_categorize}")
+            logger.debug(f"Tags provided: {tags}")
+            logger.debug(f"Notes: {notes}")
+            
             # Set defaults
             if tags is None:
                 tags = []
@@ -39,6 +61,7 @@ def register_tools(mcp: FastMCP):
             # Validate tags
             is_valid, invalid_tags = validate_tags(tags)
             if not is_valid:
+                logger.error(f"Invalid tags detected: {invalid_tags}")
                 return {
                     "success": False,
                     "error": f"Invalid tags: {', '.join(invalid_tags)}. Valid tags are: {', '.join(VALID_TAGS)}"
@@ -46,34 +69,124 @@ def register_tools(mcp: FastMCP):
                 
             # Convert date string to datetime object with timezone
             # Handle both date-only and datetime inputs
+            logger.debug(f"Parsing date: {date}")
             if len(date) == 10:  # YYYY-MM-DD format
                 transaction_date = datetime.strptime(date, "%Y-%m-%d")
+                logger.debug(f"Parsed as date-only: {transaction_date}")
             else:  # Full datetime format
                 try:
                     transaction_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    logger.debug(f"Parsed as ISO format: {transaction_date}")
                 except:
                     transaction_date = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+                    logger.debug(f"Parsed as datetime format: {transaction_date}")
             
             # Ensure timezone awareness (default to UTC if naive)
             if transaction_date.tzinfo is None:
                 transaction_date = transaction_date.replace(tzinfo=timezone.utc)
+                logger.debug(f"Added UTC timezone: {transaction_date}")
             
             # Find or create category
             category_id = None
+            auto_categorized = False
+            auto_category_confidence = None
+            manual_category_id = None
+            manual_category_name = category  # Store the provided category name
+            
+            # First, get the manual category ID if provided (we'll use it as fallback)
             if category:
-                # Try to find existing category by name
+                logger.info(f"Manual category provided as fallback: {category}")
                 existing_category = await categories.get_category_by_name(supabase, category)
                 if not existing_category:
                     # Create new category if it doesn't exist
+                    logger.info(f"Creating new category: {category}")
                     new_category = await categories.create_category(
                         supabase, 
                         CategoryCreate(name=category)
                     )
-                    category_id = new_category.category_id
+                    manual_category_id = new_category.category_id
+                    logger.debug(f"New category created with ID: {manual_category_id}")
                 else:
-                    category_id = existing_category.category_id
+                    manual_category_id = existing_category.category_id
+                    logger.debug(f"Found existing category with ID: {manual_category_id}")
+            
+            # Always try auto-categorization first (regardless of auto_categorize flag)
+            if auto_categorize:
+                logger.info("Attempting auto-categorization")
+                # First try embeddings
+                try:
+                    from app.services.categorization_free import FreeCategorizationService
+                    
+                    logger.debug("Initializing FreeCategorizationService")
+                    service = FreeCategorizationService()
+                    # Create a temporary transaction object for categorization
+                    temp_transaction = type('obj', (object,), {
+                        'merchant': merchant,
+                        'amount': Decimal(str(amount)),
+                        'notes': notes,
+                        'date': transaction_date  # Add the date attribute
+                    })
+                    
+                    logger.debug(f"Calling categorize_transaction with merchant={merchant}, notes={notes}")
+                    predicted_category_id, predicted_category_name, confidence = await service.categorize_transaction(
+                        temp_transaction,
+                        description=notes
+                    )
+                    
+                    logger.info(f"Embedding categorization result: category={predicted_category_name}, confidence={confidence}")
+                    
+                    if predicted_category_id and confidence >= 0.7:
+                        category_id = predicted_category_id
+                        category = predicted_category_name
+                        auto_categorized = True
+                        auto_category_confidence = round(confidence * 100, 1)
+                        logger.info(f"Using embedding categorization: {category} with {auto_category_confidence}% confidence")
+                except Exception as e:
+                    # Embeddings failed, try rule-based
+                    logger.warning(f"Embedding categorization failed: {str(e)}")
+                    logger.debug("Falling back to rule-based categorization")
+                
+                # Fallback to rule-based if embeddings didn't work
+                if not category_id:
+                    merchant_lower = merchant.lower() if merchant else ""
+                    notes_lower = notes.lower() if notes else ""
+                    combined_text = f"{merchant_lower} {notes_lower}"
+                    logger.debug(f"Applying rule-based categorization on: {combined_text}")
+                    
+                    # Enhanced rules with more patterns
+                    if any(food in combined_text for food in ["restaurant", "cafe", "coffee", "pizza", "burger", "food", "dining", "eat"]):
+                        category = "Food & Dining"
+                    elif any(transport in combined_text for transport in ["uber", "ola", "taxi", "fuel", "petrol", "gas", "parking", "toll"]):
+                        category = "Transportation"
+                    elif any(shopping in combined_text for shopping in ["amazon", "flipkart", "store", "mart", "shop", "mall"]):
+                        category = "Shopping"
+                    elif any(health in combined_text for health in ["medicine", "medical", "doctor", "hospital", "pharmacy", "health", "clinic", "lab", "labs", "test", "covid", "diagnostic", "scan", "xray", "x-ray"]):
+                        category = "Healthcare"
+                    elif any(utility in combined_text for utility in ["electricity", "water", "gas", "internet", "phone", "mobile"]):
+                        category = "Utilities"
+                    elif any(housing in combined_text for housing in ["rent", "mortgage", "maintenance", "repair"]):
+                        category = "Housing"
+                    
+                    if category:
+                        logger.info(f"Rule-based categorization matched: {category}")
+                        existing_category = await categories.get_category_by_name(supabase, category)
+                        if existing_category:
+                            category_id = existing_category.category_id
+                            auto_categorized = True
+                            auto_category_confidence = 0  # Rule-based
+                            logger.debug(f"Found category ID: {category_id}")
+                    else:
+                        logger.info("No rule-based category match found")
+            
+            # If auto-categorization didn't find a category, use the manual category as fallback
+            if not category_id and manual_category_id:
+                logger.info(f"Auto-categorization failed, using manual category: {manual_category_name}")
+                category_id = manual_category_id
+                category = manual_category_name
+                # Note: We don't set auto_categorized=True here since it was manually provided
             
             # Create transaction
+            logger.info(f"Creating transaction with category_id={category_id}")
             transaction_data = TransactionCreate(
                 date=transaction_date,
                 amount=Decimal(str(amount)),
@@ -82,16 +195,54 @@ def register_tools(mcp: FastMCP):
                 notes=notes
             )
             
+            logger.debug(f"Transaction data: date={transaction_date}, amount={amount}, merchant={merchant}")
             new_transaction = await transactions.create_transaction(supabase, transaction_data)
+            logger.info(f"Transaction created successfully with ID: {new_transaction.transaction_id}")
+            
+            # Store embedding for future learning if transaction has a category
+            if category_id and category:
+                try:
+                    # Determine confidence score for embedding storage
+                    embedding_confidence = 1.0  # Default for manual/fallback categories
+                    if auto_categorized and auto_category_confidence is not None:
+                        embedding_confidence = auto_category_confidence / 100.0
+                    
+                    logger.debug(f"Storing embedding for learning: category={category}, confidence={embedding_confidence}")
+                    from app.services.categorization_free import FreeCategorizationService
+                    service = FreeCategorizationService()
+                    
+                    # Store the embedding with the transaction details
+                    await service.store_transaction_embedding(
+                        transaction_id=new_transaction.transaction_id,
+                        transaction_text=service.embedding_service.format_transaction_text(
+                            date=transaction_date,
+                            amount=new_transaction.amount,
+                            merchant=merchant,
+                            description=notes,
+                            category=category
+                        ),
+                        category_id=category_id,
+                        category_name=category,
+                        confidence_score=embedding_confidence
+                    )
+                    logger.info(f"Embedding stored successfully for transaction {new_transaction.transaction_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to store embedding for learning: {str(e)}")
+                    import traceback
+                    logger.debug(f"Embedding storage error traceback: {traceback.format_exc()}")
+                    pass  # Don't fail the transaction if embedding storage fails
             
             # Add tags if provided
             created_tags = []
             if tags:  # Only process if tags is not empty
+                logger.debug(f"Processing {len(tags)} tags")
                 for tag_value in tags:
+                    logger.debug(f"Processing tag: {tag_value}")
                     # Try to find existing tag
                     existing_tag = await tags_crud.get_tag_by_value(supabase, tag_value)
                     if not existing_tag:
                         # Create new tag
+                        logger.debug(f"Creating new tag: {tag_value}")
                         new_tag = await tags_crud.create_tag(supabase, TagCreate(value=tag_value))
                         existing_tag = new_tag
                     
@@ -104,8 +255,9 @@ def register_tools(mcp: FastMCP):
                         )
                     )
                     created_tags.append(tag_value)
+                logger.info(f"Added {len(created_tags)} tags to transaction")
             
-            return {
+            result = {
                 "success": True,
                 "transaction_id": str(new_transaction.transaction_id),
                 "message": f"Created expense: ${amount} at {merchant}",
@@ -113,14 +265,24 @@ def register_tools(mcp: FastMCP):
                 "tags": created_tags
             }
             
+            if auto_categorized:
+                result["auto_categorized"] = True
+                if auto_category_confidence is not None:
+                    result["category_confidence"] = auto_category_confidence
+            
+            logger.info(f"Successfully created transaction: {result['transaction_id']}")
+            return result
+            
         except Exception as e:
             import traceback
+            error_msg = f"Failed to create expense: {str(e)}"
+            logger.error(error_msg)
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
-                "error": f"Failed to create expense: {str(e)}",
+                "error": error_msg,
                 "traceback": traceback.format_exc()
             }
-
 
     @mcp.tool()
     async def update_transaction(
@@ -138,9 +300,13 @@ def register_tools(mcp: FastMCP):
         All fields are optional - only provide the fields you want to update.
         """
         try:
+            logger.info(f"Updating transaction {transaction_id}")
+            logger.debug(f"Update params: date={date}, amount={amount}, merchant={merchant}, category={category}, tags={tags}")
+            
             # Check if transaction exists
             existing_transaction = await transactions.get_transaction(supabase, transaction_id)
             if not existing_transaction:
+                logger.error(f"Transaction {transaction_id} not found")
                 return {
                     "success": False,
                     "error": f"Transaction with ID {transaction_id} not found"
@@ -263,7 +429,6 @@ def register_tools(mcp: FastMCP):
                 "error": f"Failed to update transaction: {str(e)}"
             }
 
-
     @mcp.tool()
     async def get_spending_summary(days: int = 30) -> dict:
         """
@@ -271,8 +436,10 @@ def register_tools(mcp: FastMCP):
         Returns total spending, transaction count, and top categories by spending.
         """
         try:
+            logger.info(f"Getting spending summary for {days} days")
             # Get all transactions (in a real app, you'd filter by date range)
             all_transactions = await transactions.get_transactions(supabase, 0, 1000)
+            logger.debug(f"Retrieved {len(all_transactions) if all_transactions else 0} transactions")
             
             if not all_transactions:
                 return {
@@ -310,6 +477,7 @@ def register_tools(mcp: FastMCP):
             }
             
         except Exception as e:
+            logger.error(f"Failed to get spending summary: {str(e)}")
             return {
                 "success": False,
                 "error": f"Failed to get spending summary: {str(e)}"
@@ -408,8 +576,10 @@ def register_tools(mcp: FastMCP):
         Identifies monthly, annual, and other periodic payments.
         """
         try:
+            logger.info("Analyzing subscription expenses")
             # Get all transactions with subscription-related tags
             all_transactions = await transactions.get_transactions(supabase, 0, 1000)
+            logger.debug(f"Found {len(all_transactions) if all_transactions else 0} total transactions")
             
             subscription_transactions = []
             for t in all_transactions:
@@ -419,6 +589,9 @@ def register_tools(mcp: FastMCP):
                     tag_values = [tag.value for tag in t_with_tags.tags]
                     if any(tag in tag_values for tag in ['subscription', 'annual-subscription', 'monthly-subscription', 'quarterly-subscription', 'recurring']):
                         subscription_transactions.append(t_with_tags)
+                        logger.debug(f"Found subscription transaction: {t_with_tags.merchant} with tags {tag_values}")
+            
+            logger.info(f"Found {len(subscription_transactions)} subscription transactions")
             
             # Analyze subscriptions
             monthly_subs = []
@@ -466,8 +639,91 @@ def register_tools(mcp: FastMCP):
             }
             
         except Exception as e:
+            logger.error(f"Failed to analyze subscriptions: {str(e)}")
             return {
                 "success": False,
                 "error": f"Failed to analyze subscriptions: {str(e)}"
+            }
+    
+    @mcp.tool()
+    async def confirm_transaction_category(
+        transaction_id: str,
+        category_name: str,
+        store_embedding: bool = True
+    ) -> dict:
+        """
+        Confirm or correct a transaction's category.
+        This feeds back into the learning system to improve future predictions.
+        """
+        try:
+            # Get transaction
+            transaction = await transactions.get_transaction(supabase, transaction_id)
+            if not transaction:
+                return {
+                    "success": False,
+                    "error": f"Transaction with ID {transaction_id} not found"
+                }
+            
+            # Find category by name
+            existing_category = await categories.get_category_by_name(supabase, category_name)
+            if not existing_category:
+                return {
+                    "success": False,
+                    "error": f"Category '{category_name}' not found"
+                }
+            
+            # Update transaction category
+            update_data = TransactionUpdate(category_id=existing_category.category_id)
+            updated = await transactions.update_transaction(
+                supabase,
+                transaction_id,
+                update_data
+            )
+            
+            if not updated:
+                return {
+                    "success": False,
+                    "error": "Failed to update transaction"
+                }
+            
+            # Store embedding for learning if requested
+            if store_embedding:
+                try:
+                    from app.services.categorization_free import FreeCategorizationService
+                    
+                    service = FreeCategorizationService()
+                    await service.learn_from_feedback(
+                        transaction,
+                        existing_category.category_id,
+                        existing_category.name,
+                        description=transaction.notes
+                    )
+                    
+                    return {
+                        "success": True,
+                        "category_confirmed": existing_category.name,
+                        "embedding_stored": True,
+                        "message": f"Category confirmed as '{existing_category.name}' and stored for future learning"
+                    }
+                except Exception as e:
+                    # Category updated but embedding failed
+                    return {
+                        "success": True,
+                        "category_confirmed": existing_category.name,
+                        "embedding_stored": False,
+                        "message": f"Category confirmed but embedding storage failed: {str(e)}"
+                    }
+            
+            return {
+                "success": True,
+                "category_confirmed": existing_category.name,
+                "embedding_stored": False,
+                "message": f"Category confirmed as '{existing_category.name}'"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to confirm category: {str(e)}"
             }
 
