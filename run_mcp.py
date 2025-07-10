@@ -10,8 +10,8 @@ sys.path.insert(0, project_root)
 # Also ensure we can import from app module
 if __name__ == "__main__":
     try:
-        # Import and run the MCP server
-        from app.mcp_server import mcp
+        # Import and run the MCP server from new structure
+        from app.servers.mcp.server import mcp
         mcp.run()
     except ImportError as e:
         print(f"Import error: {e}")

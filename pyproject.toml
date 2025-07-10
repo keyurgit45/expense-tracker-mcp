@@ -3,7 +3,7 @@ name = "expense-tracker"
 version = "0.1.0"
 description = "Personal expense tracking application"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Keyur Gandhi", email = "keyur4tech123@gmail.com"}
 ]
 dependencies = [
     "fastapi>=0.104.0",
@@ -15,6 +15,7 @@ dependencies = [
     "mcp[cli]>=1.0.0",
     "sentence-transformers>=2.2.0",
     "numpy>=1.24.0",
+    "google-genai>=0.1.0",
 ]
 requires-python = ">=3.10"
 
@@ -29,12 +30,19 @@ dev = [
 ]
 
 [project.scripts]
-mcp-server = "app.mcp_server:mcp.run"
+expense-tracker-mcp = "app.servers.mcp.server:main"
 run-api = "uvicorn:main"
 
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app", "app.core", "app.core.database", "app.core.models", "app.core.repositories", "app.core.services", "app.servers", "app.servers.gemini", "app.servers.gemini.routes", "app.servers.mcp", "app.shared"]
+package-dir = {""= "."}
+
+[tool.setuptools.package-data]
+app = ["py.typed"]
 
 [tool.black]
 line-length = 88

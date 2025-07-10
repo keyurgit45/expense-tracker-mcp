@@ -1,1 +1,0 @@
-"""MCP (Model Context Protocol) server components for Expense Tracker"""
