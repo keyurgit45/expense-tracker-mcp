@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
-from app.servers.gemini.routes import chat
+from app.servers.gemini.routes import chat, auth
 from app.servers.gemini.integrations.mcp_connection_manager import get_mcp_manager
 
 # Configure logging
@@ -33,12 +34,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Expense Tracker Gemini AI Chat",
-    description="Gemini AI chat interface for expense tracking with MCP tools integration",
+    description="Gemini AI chat interface for expense tracking with MCP tools integration and JWT authentication",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# Include only chat route
+# Add CORS middleware for frontend integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure this properly for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routes
+app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 
@@ -46,6 +57,13 @@ app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 async def root():
     return {
         "service": "Gemini AI Chat for Expense Tracking",
+        "authentication": {
+            "login": "POST /api/v1/auth/login",
+            "signup": "POST /api/v1/auth/signup",
+            "refresh": "POST /api/v1/auth/refresh",
+            "logout": "POST /api/v1/auth/logout",
+            "me": "GET /api/v1/auth/me"
+        },
         "endpoints": {
             "chat": "POST /api/v1/chat",
             "history": "GET /api/v1/chat/history/{session_id}",
