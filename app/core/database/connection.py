@@ -27,4 +27,4 @@ else:
     if not settings.effective_supabase_url or not settings.effective_supabase_key:
         raise ValueError("Supabase URL and key must be configured for non-test environments")
     
-    supabase: Client = create_client(settings.effective_supabase_url, settings.effective_supabase_key)
+    supabase = create_client(settings.effective_supabase_url, settings.effective_supabase_key)
