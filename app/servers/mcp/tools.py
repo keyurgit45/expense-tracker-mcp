@@ -76,11 +76,187 @@ def register_tools(mcp: FastMCP):
         services = get_services()
         
         try:
-            # Parse date
-            if date:
-                transaction_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
-            else:
-                transaction_date = datetime.now(timezone.utc)
+            # Input validation
+            if not merchant or not merchant.strip():
+                return {"error": "Merchant name is required and cannot be empty"}
+            
+            if amount == 0:
+                return {"error": "Transaction amount cannot be zero"}
+            
+            # Parse and validate date
+            try:
+                if date:
+                    transaction_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                else:
+                    transaction_date = datetime.now(timezone.utc)
+            except ValueError as e:
+                return {"error": f"Invalid date format: {date}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"}
+            
+            # Validate tags if provided
+            if tags:
+                if not isinstance(tags, list):
+                    return {"error": "Tags must be a list"}
+                
+                valid, invalid = validate_tags(tags)
+                if not valid:
+                    return {
+                        "error": f"Invalid tags: {invalid}. Valid tags are: {VALID_TAGS}"
+                    }
+            
+            # Find category if provided
+            category_id = None
+            if category_name:
+                if not category_name.strip():
+                    return {"error": "Category name cannot be empty"}
+                
+                try:
+                    # Use a more efficient category lookup
+                    categories = await services["category"].get_categories(0, 1000)
+                    for cat in categories:
+                        if cat.name.lower() == category_name.lower():
+                            category_id = cat.category_id
+                            break
+                    if not category_id:
+                        return {"error": f"Category '{category_name}' not found"}
+                except Exception as e:
+                    logger.error(f"Error looking up category: {str(e)}")
+                    return {"error": f"Failed to look up category: {str(e)}"}
+            
+            # Create transaction with proper amount handling
+            # Store amount as positive internally, maintain sign in response
+            transaction_data = TransactionCreate(
+                date=transaction_date,
+                amount=Decimal(str(abs(amount))),  # Store as positive
+                merchant=merchant.strip(),
+                category_id=category_id,
+                is_recurring=is_recurring,
+                notes=description.strip() if description else None
+            )
+            
+            # Create the transaction
+            try:
+                transaction = await services["transaction"].create_expense(transaction_data)
+            except Exception as e:
+                logger.error(f"Error creating transaction: {str(e)}")
+                return {"error": f"Failed to create transaction: {str(e)}"}
+            
+            # Auto-categorize if no category provided
+            if not category_id:
+                try:
+                    cat_id, cat_name, confidence = await services["categorization"].categorize_transaction(
+                        transaction, description
+                    )
+                    if cat_id:
+                        # Update transaction with category
+                        update_data = TransactionUpdate(category_id=cat_id)
+                        try:
+                            transaction = await services["transaction"].update_transaction(
+                                str(transaction.transaction_id), update_data
+                            )
+                        except Exception as e:
+                            logger.error(f"Error updating transaction with auto-category: {str(e)}")
+                            # Continue without category rather than failing completely
+                        
+                        # Store embedding for learning (non-blocking)
+                        try:
+                            transaction_text = services["categorization"].embedding_service.format_transaction_text(
+                                date=transaction.date,
+                                amount=transaction.amount,
+                                merchant=transaction.merchant,
+                                description=description,
+                                category=cat_name
+                            )
+                            await services["categorization"].store_transaction_embedding(
+                                transaction_id=transaction.transaction_id,
+                                transaction_text=transaction_text,
+                                category_id=cat_id,
+                                category_name=cat_name,
+                                confidence_score=confidence
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to store embedding for learning: {str(e)}")
+                            # Non-critical failure, continue
+                except Exception as e:
+                    logger.warning(f"Auto-categorization failed: {str(e)}")
+                    # Continue without auto-categorization rather than failing completely
+            
+            # Add tags if provided
+            if tags:
+                try:
+                    for tag_value in tags:
+                        tag = await services["tag"].get_or_create_tag(tag_value)
+                        await services["tag"].add_tag_to_transaction(
+                            str(transaction.transaction_id), str(tag.tag_id)
+                        )
+                except Exception as e:
+                    logger.error(f"Error adding tags: {str(e)}")
+                    # Continue without tags rather than failing completely
+            
+            # Get final transaction with tags
+            try:
+                final_transaction = await services["transaction"].get_transaction_with_tags(
+                    str(transaction.transaction_id)
+                )
+            except Exception as e:
+                logger.error(f"Error getting final transaction: {str(e)}")
+                # Fall back to basic transaction data
+                final_transaction = transaction
+            
+            # Prepare response with proper amount sign
+            response_amount = float(final_transaction.amount)
+            if amount < 0:  # If original amount was negative (expense), make response negative
+                response_amount = -response_amount
+            
+            return {
+                "transaction_id": str(final_transaction.transaction_id),
+                "date": final_transaction.date.isoformat(),
+                "amount": response_amount,
+                "merchant": final_transaction.merchant,
+                "category": await _get_category_name(final_transaction.category_id, services["category"]),
+                "tags": [tag.value for tag in final_transaction.tags] if hasattr(final_transaction, 'tags') and final_transaction.tags else [],
+                "is_recurring": final_transaction.is_recurring,
+                "notes": final_transaction.notes
+            }
+            
+        except Exception as e:
+            logger.error(f"Unexpected error creating expense: {str(e)}")
+            return {"error": f"An unexpected error occurred: {str(e)}"}
+    
+    
+    @mcp.tool()
+    async def update_expense(
+        transaction_id: str,
+        amount: Optional[float] = None,
+        merchant: Optional[str] = None,
+        date: Optional[str] = None,
+        category_name: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        is_recurring: Optional[bool] = None
+    ) -> dict:
+        """
+        Update an existing expense transaction.
+        
+        Args:
+            transaction_id: ID of the transaction to update
+            amount: New transaction amount (use negative for expenses, positive for income)
+            merchant: New merchant/vendor name
+            date: New transaction date in ISO format
+            category_name: New category name
+            description: New description or notes
+            tags: New list of tags from predefined set
+            is_recurring: Whether this is a recurring transaction
+            
+        Returns:
+            Updated transaction with category and tags
+        """
+        services = get_services()
+        
+        try:
+            # Check if transaction exists
+            existing_transaction = await services["transaction"].get_transaction(transaction_id)
+            if not existing_transaction:
+                return {"error": f"Transaction with ID '{transaction_id}' not found"}
             
             # Validate tags if provided
             if tags:
@@ -90,74 +266,64 @@ def register_tools(mcp: FastMCP):
                         "error": f"Invalid tags: {invalid}. Valid tags are: {VALID_TAGS}"
                     }
             
-            # Find or auto-categorize
-            category_id = None
-            if category_name:
+            # Prepare update data
+            update_data = {}
+            
+            if amount is not None:
+                update_data["amount"] = Decimal(str(abs(amount)))
+            
+            if merchant is not None:
+                update_data["merchant"] = merchant
+                
+            if date is not None:
+                update_data["date"] = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                
+            if is_recurring is not None:
+                update_data["is_recurring"] = is_recurring
+                
+            if description is not None:
+                update_data["notes"] = description
+            
+            # Handle category update
+            if category_name is not None:
                 categories = await services["category"].get_categories(0, 1000)
+                category_id = None
                 for cat in categories:
                     if cat.name.lower() == category_name.lower():
                         category_id = cat.category_id
                         break
                 if not category_id:
                     return {"error": f"Category '{category_name}' not found"}
+                update_data["category_id"] = category_id
             
-            # Create transaction
-            transaction_data = TransactionCreate(
-                date=transaction_date,
-                amount=Decimal(str(abs(amount))),  # Store as positive
-                merchant=merchant,
-                category_id=category_id,
-                is_recurring=is_recurring,
-                notes=description
-            )
-            
-            transaction = await services["transaction"].create_expense(transaction_data)
-            
-            # Auto-categorize if no category provided
-            if not category_id:
-                cat_id, cat_name, confidence = await services["categorization"].categorize_transaction(
-                    transaction, description
+            # Update transaction if there are changes
+            if update_data:
+                transaction_update = TransactionUpdate(**update_data)
+                updated_transaction = await services["transaction"].update_transaction(
+                    transaction_id, transaction_update
                 )
-                if cat_id:
-                    # Update transaction with category
-                    update_data = TransactionUpdate(category_id=cat_id)
-                    transaction = await services["transaction"].update_transaction(
-                        str(transaction.transaction_id), update_data
-                    )
-                    
-                    # Store embedding for learning
-                    transaction_text = services["categorization"].embedding_service.format_transaction_text(
-                        date=transaction.date,
-                        amount=transaction.amount,
-                        merchant=transaction.merchant,
-                        description=description,
-                        category=cat_name
-                    )
-                    await services["categorization"].store_transaction_embedding(
-                        transaction_id=transaction.transaction_id,
-                        transaction_text=transaction_text,
-                        category_id=cat_id,
-                        category_name=cat_name,
-                        confidence_score=confidence
-                    )
+            else:
+                updated_transaction = existing_transaction
             
-            # Add tags if provided
-            if tags:
+            # Handle tags update if provided
+            if tags is not None:
+                # Remove existing tags
+                existing_tags = await services["tag"].get_transaction_tags(transaction_id)
+                for tag in existing_tags:
+                    await services["tag"].remove_tag_from_transaction(transaction_id, str(tag.tag_id))
+                
+                # Add new tags
                 for tag_value in tags:
                     tag = await services["tag"].get_or_create_tag(tag_value)
-                    await services["tag"].add_tag_to_transaction(
-                        str(transaction.transaction_id), str(tag.tag_id)
-                    )
+                    await services["tag"].add_tag_to_transaction(transaction_id, str(tag.tag_id))
             
             # Get final transaction with tags
-            final_transaction = await services["transaction"].get_transaction_with_tags(
-                str(transaction.transaction_id)
-            )
+            final_transaction = await services["transaction"].get_transaction_with_tags(transaction_id)
             
             return {
                 "transaction_id": str(final_transaction.transaction_id),
                 "date": final_transaction.date.isoformat(),
-                "amount": float(final_transaction.amount) * (-1 if amount < 0 else 1),
+                "amount": float(final_transaction.amount) * (-1 if amount < 0 else 1) if amount is not None else float(final_transaction.amount) * -1,
                 "merchant": final_transaction.merchant,
                 "category": await _get_category_name(final_transaction.category_id, services["category"]),
                 "tags": [tag.value for tag in final_transaction.tags],
@@ -166,7 +332,7 @@ def register_tools(mcp: FastMCP):
             }
             
         except Exception as e:
-            logger.error(f"Error creating expense: {str(e)}")
+            logger.error(f"Error updating expense: {str(e)}")
             return {"error": str(e)}
     
     
